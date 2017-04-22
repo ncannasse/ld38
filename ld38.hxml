@@ -4,3 +4,4 @@
 -lib heaps
 -lib hlsdl
 -lib mongomod
+-lib castle
