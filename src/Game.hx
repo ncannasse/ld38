@@ -1,5 +1,6 @@
 
 typedef AnimalData = { data : haxe.io.Bytes, path : Array<Int>, speed : Float, time : Float, author : String, uid : Int, name : String };
+typedef TilesData = Map<Int,{ data : haxe.io.Bytes, author : String, time : Float }>;
 
 class Game extends hxd.App {
 
@@ -17,7 +18,7 @@ class Game extends hxd.App {
 	var buttons : h2d.Flow;
 	var banner : h2d.Flow;
 	var cursor : h2d.Bitmap;
-	var tilesData : Map<Int,{ data : haxe.io.Bytes, author : String, time : Float }> = new Map();
+	var tilesData : TilesData = new Map();
 	var texture : h3d.mat.Texture;
 	var pixels : hxd.Pixels;
 	public var view : h2d.Layers;
@@ -36,13 +37,12 @@ class Game extends hxd.App {
 	public var editor : Editor;
 	var palette : Array<Int>;
 
+	var prevWidth : Int;
+	var prevHeight : Int;
+
 	override function init() {
 		inst = this;
-		@:privateAccess hxd.Stage.getInstance().window.title = "Your Small World";
-		#if release
-		engine.fullScreen = true;
-		hl.UI.closeConsole();
-		#end
+		@:privateAccess hxd.Stage.getInstance().window.title = "Welcome to Ludum World!";
 
 		engine.backgroundColor = 0xFF31A2F2;
 
@@ -56,6 +56,7 @@ class Game extends hxd.App {
 		texture = new h3d.mat.Texture(WIDTH * 16, HEIGHT * 16, [Target]);
 		view = new h2d.Layers(s2d);
 
+		s2d.addEventListener(onEvent);
 
 		var def = new h2d.CdbLevel(Data.level, 0, view);
 		def.redraw();
@@ -64,6 +65,9 @@ class Game extends hxd.App {
 
 		viewTiles = new h2d.Bitmap(h2d.Tile.fromTexture(texture), view);
 		pixels = hxd.Pixels.alloc(texture.width, texture.height, ARGB);
+
+		view.x = (engine.width - viewTiles.tile.width) >> 1;
+		view.y = (engine.height - viewTiles.tile.height) >> 1;
 
 		ui = new h2d.Flow();
 		s2d.add(ui, LAYER_UI);
@@ -77,9 +81,14 @@ class Game extends hxd.App {
 		banner.horizontalAlign = Middle;
 
 
-		infos = text("", ui);
-		ui.getProperties(infos).align(Bottom, Middle);
-		ui.getProperties(infos).paddingBottom = 20;
+		var infosBox = new h2d.Flow(ui);
+		infosBox.padding = 5;
+		infosBox.paddingTop = 3;
+		infosBox.backgroundTile = h2d.Tile.fromColor(0x404040, 0.4);
+		infos = text("", infosBox);
+		infos.dropShadow = { dx : 0, dy : 1, color : 0, alpha : 0.5 };
+		ui.getProperties(infosBox).align(Bottom, Middle);
+		ui.getProperties(infosBox).paddingBottom = 20;
 		var int = new h2d.Interactive(viewTiles.tile.width, viewTiles.tile.height, view);
 		int.cursor = Default;
 		int.onOut = function(_) setInfos();
@@ -89,9 +98,13 @@ class Game extends hxd.App {
 			var t = tilesData.get(address(x, y));
 			if( t == null || t.author == null || t.time == 0 )
 				setInfos();
-			else
-				setInfos("Last edit " + when(t.time) + " by " + t.author);
+			else {
+				var inf = "Last edit " + when(t.time) + " by <font color='#CCC'>" + StringTools.htmlEscape(t.author) + '</font>';
+				if( t.time + 60 * 60 > time ) inf += "<br/><font color='#F00'>(locked for one hour)</font>";
+				setInfos(inf);
+			}
 		};
+		int.propagateEvents = true;
 
 		onResize();
 
@@ -103,15 +116,55 @@ class Game extends hxd.App {
 			prefs = { name : null, uid : Std.random(0x1000000), animal : null };
 			askName();
 		}
+
+		#if release
+		hl.UI.closeConsole();
+		#end
 	}
 
 
 	public function setInfos(?text:String) {
 		infos.text = text == null ? "" : text;
+		infos.parent.visible = text != null;
 	}
 
 	function savePrefs() {
 		hxd.Save.save(prefs, "prefs");
+	}
+
+	function onEvent(e:hxd.Event ) {
+		switch( e.kind ) {
+		case EWheel:
+			var stage = hxd.Stage.getInstance();
+			var pt = view.globalToLocal(new h2d.col.Point(stage.mouseX, stage.mouseY));
+			if( e.wheelDelta < 0 )
+				view.scaleX++;
+			else if( view.scaleX > 1 )
+				view.scaleX--;
+			view.scaleY = view.scaleX;
+			pt = view.localToGlobal(pt);
+			pt.x -= stage.mouseX;
+			pt.y -= stage.mouseY;
+			view.x -= Std.int(pt.x);
+			view.y -= Std.int(pt.y);
+		case EPush:
+			var px = e.relX, py = e.relY;
+			s2d.startDrag(function(e) {
+				switch( e.kind ) {
+				case EMove:
+					var dx = e.relX - px;
+					var dy = e.relY - py;
+					px += dx;
+					py += dy;
+					view.x += dx;
+					view.y += dy;
+				case ERelease:
+					s2d.stopDrag();
+				default:
+				}
+			});
+		default:
+		}
 	}
 
 	function askName() {
@@ -133,7 +186,8 @@ class Game extends hxd.App {
 		tf.inputWidth = 100;
 		tf.focus();
 
-		new Button("OK", function() {
+
+		var bt = new Button("OK", function() {
 
 			var name = StringTools.trim(tf.text);
 			if( name.length < 3 ) return;
@@ -143,6 +197,8 @@ class Game extends hxd.App {
 			refresh();
 
 		}, s);
+
+		tf.onKeyDown = function(e) if( e.keyCode == 13 ) bt.interactive.onClick(null);
 	}
 
 	function initUI() {
@@ -155,6 +211,85 @@ class Game extends hxd.App {
 		new Button("Edit Animal", editAnimal, buttons).minWidth = 100;
 		new Button("Place Animal", placeAnimal, buttons).minWidth = 100;
 		new Button("Refresh", refresh, buttons).minWidth = 100;
+		new Button("History", toggleHistory, buttons).minWidth = 100;
+	}
+
+	var hslider : h2d.Slider;
+	var curTiles : TilesData;
+
+	function toggleHistory() {
+		buttons.visible = false;
+
+		for( a in animals )
+			a.visible = false;
+
+		var history : Map<String, TilesData> = try haxe.Unserializer.run(sys.io.File.getContent("history.dat")) catch( e : Dynamic ) new Map<String,TilesData>();
+
+		function saveHistory() {
+			sys.io.File.saveContent("history.dat", haxe.Serializer.run(history));
+		}
+
+		hslider = new h2d.Slider(1, 20, s2d);
+		hslider.y = 20;
+		hslider.x = 40;
+		var curTime = time;
+		var current = curTime;
+		var hkeys = [];
+		curTiles = tilesData;
+		for( t in tilesData )
+			hkeys.push(t.time);
+		hkeys.push(curTime);
+		hkeys.sort(Reflect.compare);
+
+		var btClose = new Button("Close", function() {
+			hslider.remove();
+			hslider = null;
+			for( a in animals )
+				a.visible = true;
+			tilesData = curTiles;
+			buttons.visible = true;
+			rebuild();
+		}, hslider);
+
+		hslider.minValue = hkeys[0];
+		hslider.maxValue = hkeys[hkeys.length - 1];
+		hslider.value = hslider.maxValue;
+
+		hslider.onChange = function() {
+
+			var v = hslider.value;
+			var nearest = -1e10;
+			for( k in hkeys )
+				if( hxd.Math.abs(k - v) < hxd.Math.abs(nearest - v) )
+					nearest = k;
+
+			if( current == nearest )
+				return;
+
+			current = nearest;
+
+			var v = history.get(""+nearest);
+			if( v == null && nearest == curTime )
+				v = curTiles;
+			if( v != null ) {
+				tilesData = v;
+				rebuild();
+			} else {
+				setBanner("Loading...");
+				haxe.Timer.delay(function() {
+					setBanner();
+					var cnx = connect();
+					tilesData = loadTiles(cnx,nearest);
+					close();
+					history.set(""+nearest, tilesData);
+					saveHistory();
+					rebuild();
+				}, 0);
+			}
+		};
+
+		onResize();
+		btClose.x = hslider.width + 20;
 	}
 
 	function close() {
@@ -168,22 +303,31 @@ class Game extends hxd.App {
 		return db;
 	}
 
+	function loadTiles( cnx : org.mongodb.Database, ?time : Float ) {
+		var pr : Array<Dynamic> = [
+			{"$sort":{addr:1,time:1}},
+			{"$group":{_id:"$addr", time:{"$last":"$time"}, data:{"$last":"$data"}, author:{"$last":"$author"}}},
+		];
+		if( time != null )
+			pr.unshift({"$match":{ time : { "$lt": time }}});
+		var ret = cnx.getCollection("tiles").aggregate(pr);
+		var tilesData = new Map();
+		for( t in ret )
+			try tilesData.set(t._id, { data : haxe.zip.Uncompress.run(t.data), author : t.author, time : t.time }) catch( e : Dynamic ) {};
+		return tilesData;
+	}
+
 	function refresh() {
 		setBanner("Loading...");
 		haxe.Timer.delay(function() {
 
 			var cnx = connect();
-			var ret = cnx.getCollection("tiles").aggregate([
-				{"$sort":{addr:1,time:1}},
-				{"$group":{_id:"$addr", time:{"$last":"$time"}, data:{"$last":"$data"}, author:{"$last":"$author"}}},
-			]);
-			tilesData = new Map();
-			for( t in ret )
-				try tilesData.set(t._id, { data : haxe.zip.Uncompress.run(t.data), author : t.author, time : t.time }) catch( e : Dynamic ) {};
+			tilesData = loadTiles(cnx);
 
 			var ret = cnx.getCollection("animals").aggregate([
 				{"$sort":{uid:1, time:1}},
 				{"$group":{_id:"$uid", time:{"$last":"$time"}, data:{"$last":"$data"}, author:{"$last":"$author"}, path:{"$last":"$path"}, speed:{"$last":"$speed"}, name:{"$last":"$name"}}},
+				{"$limit":100},
 			]);
 			for( a in animals.copy() ) a.remove();
 			for( a in ret ) {
@@ -283,7 +427,6 @@ class Game extends hxd.App {
 		var adata = if( prefs.animal != null ) prefs.animal.data else haxe.io.Bytes.alloc(16 * 16 * 2);
 		var ed = new Editor(2);
 		ed.load(adata);
-		ed.addInput("Name", function(n) a.name = n).text = a.name;
 		var s = ed.addSlider("Speed", function(n) {
 			a.speed = n;
 			ed.preview.speed = 6 * a.speed;
@@ -292,6 +435,7 @@ class Game extends hxd.App {
 		s.maxValue = 3;
 		s.value = a.speed;
 		ed.preview.speed = 6 * a.speed;
+		ed.addInput("Name", function(n) a.name = n).text = a.name;
 		ed.onSave = function(data) {
 			if( prefs.animal == null )
 				prefs.animal = a;
@@ -463,12 +607,22 @@ class Game extends hxd.App {
 	}
 
 	override function onResize() {
+
+		var pt = view.globalToLocal(new h2d.col.Point(prevWidth >> 1, prevHeight >> 1));
+
 		ui.minWidth = ui.maxWidth = engine.width;
 		ui.minHeight = ui.maxHeight = engine.height;
 		banner.minWidth = ui.minWidth;
-		view.x = (engine.width - viewTiles.tile.width) >> 1;
-		view.y = (engine.height - viewTiles.tile.height) >> 1;
 		if( editor != null ) editor.onResize();
+		if( hslider != null ) hslider.width = engine.width - 120;
+
+		var pt2 = view.globalToLocal(new h2d.col.Point(engine.width >> 1, engine.height >> 1));
+		if( prevWidth != 0 ) {
+			view.x += Std.int((pt2.x - pt.x) / view.scaleX);
+			view.y += Std.int((pt2.y - pt.y) / view.scaleY);
+		}
+		prevWidth = engine.width;
+		prevHeight = engine.height;
 	}
 
 	public function getFont() {
@@ -476,7 +630,7 @@ class Game extends hxd.App {
 	}
 
 	public function text( text : String, ?parent ) {
-		var tf = new h2d.Text(getFont(), parent);
+		var tf = new h2d.HtmlText(getFont(), parent);
 		tf.text = text;
 		return tf;
 	}

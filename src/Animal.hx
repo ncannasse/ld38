@@ -12,6 +12,7 @@ class Animal {
 	var progress = 0.;
 	var prevTime : Float;
 	var int : h2d.Interactive;
+	public var visible(get, set) : Bool;
 
 	public function new(a : Game.AnimalData) {
 		this.data = a;
@@ -34,7 +35,7 @@ class Animal {
 		bmp = new h2d.Anim([for( f in frames ) { var t = h2d.Tile.fromTexture(f); t.dx = -8; t.dy = -16; t; }]);
 		int = new h2d.Interactive(16, 16, bmp);
 		int.onOver = function(_) {
-			game.setInfos(a.name+" by "+a.author+"\n(modified "+game.when(a.time)+")");
+			game.setInfos("<font color='#CCC'>"+StringTools.htmlEscape(a.name)+"</font> by <font color='#CCC'>"+StringTools.htmlEscape(a.author)+"</font><br/>(modified "+game.when(a.time)+")");
 		};
 		int.onOut = function(_) {
 			game.setInfos();
@@ -47,6 +48,9 @@ class Animal {
 		update(game.time);
 	}
 
+	function get_visible() return bmp.visible;
+	function set_visible(v) return bmp.visible = v;
+
 	public function update(time:Float) {
 		if( pos < 0 ) resume(time);
 		var p = fullPath[pos % fullPath.length];
@@ -57,8 +61,9 @@ class Animal {
 			bmp.y = p.y;
 		} else {
 			progress += (time - prevTime) * data.speed * MOVE_SPEED;
-			bmp.x = p.x + ((n.x - p.x) / d) * progress;
-			bmp.y = p.y + ((n.y - p.y) / d) * progress;
+			var zoom = game.view.scaleX;
+			bmp.x = Std.int( (p.x + ((n.x - p.x) / d) * progress) * zoom ) / zoom;
+			bmp.y = Std.int( (p.y + ((n.y - p.y) / d) * progress) * zoom ) / zoom;
 			if( n.x > p.x ) {
 				int.x = -8;
 				bmp.scaleX = int.scaleX = 1;

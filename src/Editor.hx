@@ -14,6 +14,8 @@ class Editor {
 
 	public var preview : h2d.Anim;
 
+	static var clipboard : haxe.io.Bytes;
+
 	public function new(frames = 1) {
 		this.frames = frames;
 		game = Game.inst;
@@ -39,9 +41,11 @@ class Editor {
 		var view = new h2d.Bitmap(h2d.Tile.fromTexture(textures[0]), editZone);
 		view.scale(zoom);
 
+		var syncPalette = null;
+
 		var cursor = new h2d.Bitmap(hxd.Res.editCursor.toTile(), editZone);
 		var int = new h2d.Interactive(16, 16, view);
-		var posX = 0, posY = 0, mouseDown : Null<Int>;
+		var posX = 0, posY = 0, mouseDown = false;
 		cursor.visible = false;
 		int.onOver = function(_) cursor.visible = true;
 		int.onOut = function(_) cursor.visible = false;
@@ -50,23 +54,23 @@ class Editor {
 			posY = Std.int(e.relY);
 			cursor.x = posX * zoom - 1;
 			cursor.y = posY * zoom - 1;
-			if( mouseDown != null ) {
-				data.set(posX + posY * 16 + curFrame * 256, mouseDown == 0 ? curColor : 0);
+			if( mouseDown ) {
+				data.set(posX + posY * 16 + curFrame * 256, curColor);
 				sync();
 			}
 		};
 		int.onPush = function(e) {
-			mouseDown = e.button;
 			if( e.button == 0 ) {
+				mouseDown = true;
 				data.set(posX + posY * 16 + curFrame * 256, curColor);
 				sync();
 			} else {
-				data.set(posX + posY * 16 + curFrame * 256, 0);
-				sync();
+				curColor = data.get(posX + posY * 16 + curFrame * 256);
+				syncPalette();
 			}
 		};
 		int.onRelease = function(_) {
-			mouseDown = null;
+			mouseDown = false;
 		};
 		int.enableRightButton = true;
 
@@ -85,45 +89,81 @@ class Editor {
 
 		var pal = new h2d.Bitmap(hxd.Res.palette.toTile(), right);
 		pal.scale(zoom);
-		right.addSpacing(50);
-
 
 		var cpal = new h2d.Bitmap(hxd.Res.tileCursor.toTile(), pal);
 		cpal.scale(1 / zoom);
 		var pint = new h2d.Interactive(pal.tile.width, pal.tile.height, pal);
-		pint.onClick = function(e:hxd.Event) {
-			if( e != null )
-				curColor = Std.int(e.relX) + Std.int(e.relY) * pal.tile.width;
+
+		syncPalette = function() {
 			cpal.x = curColor % pal.tile.width - 1 / zoom;
 			cpal.y = Std.int(curColor / pal.tile.width) - 1 / zoom;
+		};
+		pint.onClick = function(e:hxd.Event) {
+			curColor = Std.int(e.relX) + Std.int(e.relY) * pal.tile.width;
+			syncPalette();
 		}
-		pint.onClick(null);
+		syncPalette();
+
+		right.addSpacing(20);
+
+		if( frames > 1 ) {
+			var fr = new h2d.Flow(right);
+			fr.horizontalSpacing = 10;
+			fr.verticalAlign = Middle;
+			var tf = game.text("Frame "+curFrame, fr);
+			new Button("Switch", function() {
+				curFrame = 1 - curFrame;
+				tf.text = "Frame " + curFrame;
+				sync();
+				view.tile = h2d.Tile.fromTexture(textures[curFrame]);
+			}, fr);
+			right.addSpacing(10);
+		}
+
+		var fr = new h2d.Flow(right);
+		fr.horizontalSpacing = 10;
+		fr.verticalAlign = Middle;
+		new Button("Copy", function() {
+			clipboard = data.sub(curFrame*256, 256);
+		}, fr);
+		new Button("Paste", function() {
+			if( clipboard != null ) {
+				data.blit(curFrame * 256, clipboard, 0, 256);
+				sync();
+			}
+		}, fr);
+		new Button("Flip", function() {
+			for( y in 0...16 )
+				for( x in 0...8 ) {
+					var p1 = curFrame * 256 + x + y * 16;
+					var p2 = curFrame * 256 + 15 - x + y * 16;
+					var v = data.get(p1);
+					data.set(p1, data.get(p2));
+					data.set(p2, v);
+				}
+			sync();
+		}, fr);
+
+		right.addSpacing(10);
 
 		options = new h2d.Flow(right);
 		options.isVertical = true;
 		options.verticalSpacing = 10;
 
-		if( frames > 1 ) {
-			new Button("Change Frame", function() {
-				curFrame = 1 - curFrame;
-				sync();
-				view.tile = h2d.Tile.fromTexture(textures[curFrame]);
-			}, right);
-			right.addSpacing(10);
-		}
-
 		var bt = new h2d.Flow(right);
 		bt.horizontalSpacing = 10;
+		right.getProperties(bt).verticalAlign = Bottom;
 
 		new Button("Save", function() {
 			remove();
 			onSave(data);
 		}, bt);
 
-		new Button("Cancel", function() {
+		var cancel = new Button("Cancel", function() {
 			remove();
 			onCancel();
 		}, bt);
+		@:privateAccess cancel.background.color.set(1, 0.6, 0.6);
 
 		onResize();
 	}
