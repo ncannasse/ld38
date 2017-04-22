@@ -1,7 +1,7 @@
 -cp src
+-cp lib
 -hl ld38.hl
 -main Game
 -lib heaps
 -lib hlsdl
--lib mongomod
 -lib castle
