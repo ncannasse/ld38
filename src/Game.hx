@@ -44,6 +44,21 @@ class Game extends hxd.App {
 		inst = this;
 		@:privateAccess hxd.Stage.getInstance().window.title = "Welcome to Ludum World!";
 
+		hxd.Res.windBase.play(true);
+
+		var sounds = [];
+		var i = 0;
+		while( true )
+			try sounds.push(hxd.Res.load("sound0" + i++ + ".ogg").toSound()) catch( e : hxd.res.NotFound ) break;
+
+		function playSound() {
+			haxe.Timer.delay(function() {
+				sounds[Std.random(sounds.length)].play(0.1 + Math.random() * 0.4);
+				playSound();
+			},Std.int((1 + Math.random() * 3) * 1000));
+		}
+		playSound();
+
 		engine.backgroundColor = 0xFF31A2F2;
 
 		time = (Date.now().getTime() / 1000) - 1492854000.0;
