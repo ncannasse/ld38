@@ -5,4 +5,4 @@
 -lib heaps
 -lib hlsdl
 -lib castle
-#-D release
+-D release
